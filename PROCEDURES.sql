@@ -38,11 +38,11 @@ DELIMITER ;
 DELIMITER //
 
 CREATE PROCEDURE CrearPlanes(
-    IN p_interes FLOAT(10,2),
-    IN p_cuotas INT,
+    IN p_interes FLOAT (10,2),
+    IN p_cuotas INT
 )
 BEGIN
-    INSERT INTO clientes (interes, cuotas)
+    INSERT INTO planes (interes, cuotas)
     VALUES (p_interes, p_cuotas);
 END //
 
@@ -50,11 +50,7 @@ DELIMITER ;
 
 --
 -- PROCEDURES PARA CREAR PRESTAMO
---
 
-DELIMITER //
-
--- DROP PROCEDURE IF EXISTS CrearPrestamo
 
 DELIMITER //
 
@@ -82,27 +78,29 @@ BEGIN
     FROM planes 
     WHERE cuotas = p_cuotas;
     
-    -- Insertar el nuevo prestamo
+    -- Insertar el nuevo préstamo
     INSERT INTO prestamos (cliente_id, plan_id, total, fecha_creacion, fecha_cancelacion)
     VALUES (v_cliente_id, v_plan_id, p_total, p_fecha_creacion, p_fecha_cancelacion);
     
-    -- Obtener el ID del prestamo recién creado
+    -- Obtener el ID del préstamo recién creado
     SET v_prestamo_id = LAST_INSERT_ID();
     
     -- Calcular las fechas de vencimiento y crear las cuotas
     SET v_nro_cuota = 1;
     WHILE v_nro_cuota <= p_cuotas DO
-        -- Calcular la fecha de vencimiento para cada cuota
-        SET v_fecha_vencimiento = DATE_ADD(LAST_DAY(p_fecha_creacion), INTERVAL v_nro_cuota MONTH);
-        SET v_fecha_vencimiento = DATE_FORMAT(v_fecha_vencimiento + INTERVAL 5 DAY, '%Y-%m-05');
-        
+        -- Calcular la fecha de vencimiento para cada cuota (cada mes a partir de la creación)
+        SET v_fecha_vencimiento = DATE_ADD(p_fecha_creacion, INTERVAL v_nro_cuota MONTH);
+
+        -- Crear la cuota utilizando el procedimiento CrearCuotas
         CALL CrearCuotas(v_nro_cuota, p_total / p_cuotas, v_prestamo_id, v_fecha_vencimiento);
 
+        -- Incrementar el número de la cuota
         SET v_nro_cuota = v_nro_cuota + 1;
     END WHILE;
 END //
 
 DELIMITER ;
+
 
 
 --
@@ -137,17 +135,16 @@ CREATE PROCEDURE CalcularInteresesVencidos()
 BEGIN
     DECLARE done INT DEFAULT 0;
     DECLARE v_cuotas_id INT;
-    DECLARE v_nro_cuota INT;
     DECLARE v_total FLOAT(10,2);
     DECLARE v_prestamo_id INT;
     DECLARE v_fecha_vencimiento DATE;
     DECLARE v_interes FLOAT(10,2);
     DECLARE v_dias_retraso INT;
-    DECLARE v_interes_diario FLOAT(5,4) DEFAULT 0.038;
+    DECLARE v_interes_diario FLOAT(5,4) DEFAULT 0.00038; -- 0.038% es igual a 0.00038 en decimal
 
     -- Cursor para recorrer las cuotas vencidas
     DECLARE cuotas_cursor CURSOR FOR
-        SELECT id, nro_cuota, total, prestamo_id, fecha_vencimiento
+        SELECT id, total, prestamo_id, fecha_vencimiento
         FROM cuotas
         WHERE fecha_vencimiento < CURDATE() AND fecha_pago IS NULL;
 
@@ -159,7 +156,7 @@ BEGIN
 
     -- Iterar sobre cada cuota vencida
     read_loop: LOOP
-        FETCH cuotas_cursor INTO v_cuotas_id, v_nro_cuota, v_total, v_prestamo_id, v_fecha_vencimiento;
+        FETCH cuotas_cursor INTO v_cuotas_id, v_total, v_prestamo_id, v_fecha_vencimiento;
         IF done THEN
             LEAVE read_loop;
         END IF;
@@ -167,7 +164,7 @@ BEGIN
         -- Calcular los días de retraso
         SET v_dias_retraso = DATEDIFF(CURDATE(), v_fecha_vencimiento);
 
-        -- Calcular el interés acumulado
+        -- Calcular el interés acumulado al 0.038% diario
         SET v_interes = v_total * v_interes_diario * v_dias_retraso;
 
         -- Insertar el interés calculado en la tabla intereses
@@ -180,6 +177,7 @@ BEGIN
 END //
 
 DELIMITER ;
+
 
 
 --
@@ -201,13 +199,26 @@ BEGIN
     DECLARE v_total_cuotas FLOAT(10, 2);
     DECLARE v_fecha_pago TIMESTAMP;
     DECLARE v_fecha_vencimiento TIMESTAMP;
+    DECLARE v_intereses FLOAT(10,2);
     DECLARE done INT DEFAULT 0;
 
+    -- Declaración del cursor antes de cualquier otra lógica
+    DECLARE cuotas_cursor CURSOR FOR
+        SELECT c.id, c.total, c.fecha_pago, c.fecha_vencimiento
+        FROM cuotas c
+        JOIN prestamos p ON c.prestamo_id = p.id
+        WHERE p.cliente_id = v_cliente_id;
+
+    -- Manejador para el fin del cursor
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = 1;
+
+    -- Obtener el ID del cliente
     SELECT id INTO v_cliente_id 
     FROM clientes 
     WHERE dni = p_cliente_dni;
 
     IF v_cliente_id IS NOT NULL THEN
+        -- Obtener el total del préstamo del cliente
         SELECT SUM(p.total) INTO v_prestamo_total
         FROM prestamos p
         WHERE p.cliente_id = v_cliente_id;
@@ -217,16 +228,10 @@ BEGIN
         SET v_deuda_total = 0;
         SET v_deuda_a_vencer = 0;
 
-        DECLARE cuotas_cursor CURSOR FOR
-            SELECT c.id, c.total, c.fecha_pago, c.fecha_vencimiento
-            FROM cuotas c
-            JOIN prestamos p ON c.prestamo_id = p.id
-            WHERE p.cliente_id = v_cliente_id;
-
-        DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = 1;
-
+        -- Abrir el cursor
         OPEN cuotas_cursor;
 
+        -- Loop para recorrer las cuotas
         read_loop: LOOP
             FETCH cuotas_cursor INTO v_prestamo_id, v_total_cuotas, v_fecha_pago, v_fecha_vencimiento;
             IF done THEN
@@ -236,7 +241,7 @@ BEGIN
             IF v_fecha_pago IS NOT NULL THEN
                 SET v_total_pagado = v_total_pagado + v_total_cuotas;
             ELSE
-                DECLARE v_intereses FLOAT(10,2);
+                -- Calcular intereses acumulados
                 SELECT IFNULL(SUM(i.total), 0) INTO v_intereses
                 FROM intereses i
                 WHERE i.cuotas_id = v_prestamo_id;
@@ -249,19 +254,20 @@ BEGIN
             END IF;
         END LOOP;
 
+        -- Cerrar el cursor
         CLOSE cuotas_cursor;
 
+        -- Calcular la deuda total
         SET v_deuda_total = v_prestamo_total - v_total_pagado + v_deuda_total;
 
+        -- Devolver los resultados
         SELECT v_deuda_total AS deuda_total, v_deuda_a_vencer AS deuda_a_vencer;
     ELSE
+        -- Enviar mensaje de error si el cliente no existe
         SELECT 'El cliente con el DNI proporcionado no existe.' AS mensaje_error;
     END IF;
 END //
 
 DELIMITER ;
-
-
-
 
 
