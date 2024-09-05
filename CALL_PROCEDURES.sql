@@ -1,12 +1,13 @@
+-- SQLBook: Code
 --
 -- PROCEDURE PARA CREAR CLIENTE
 --
-CALL CrearCliente('Juan', 'Pérez', 'Calle Falsa 123', 12345678);
+CALL CrearCliente('Marcelo', 'Arteaga', 'San antonio 5732', 40001889);
 
 --
 -- PROCEDURE PARA ELIMINAR CLIENTE
 --
-CALL EliminarCliente(40725342);
+CALL EliminarCliente(40001889);
 
 --
 -- PROCEDURES PARA CREAR PLANES
@@ -30,7 +31,7 @@ CALL CrearCuotas(1,8333.33,1,'2024-09-28 22:56:26');
 
 --
 -- CALL PROCEDURE PARA CALCULAR INTERESES
---
+-- Este procedimiento entregara datos vacios ,ya que no hay cuotas vencidas 
 
 CALL CalcularInteresesVencidos();
 

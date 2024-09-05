@@ -1,3 +1,4 @@
+-- SQLBook: Code
 
 --
 -- Estructura de tabla para la tabla `clientes`
@@ -149,6 +150,9 @@ ALTER TABLE `prestamos`
 --
 ALTER TABLE `cuotas`
   ADD CONSTRAINT `cuotas_ibfk_1` FOREIGN KEY (`prestamo_id`) REFERENCES `prestamos` (`id`);
+
+
+ALTER TABLE cuotas ADD nro_cuota INT(11);
 
 --
 -- Filtros para la tabla `intereses`
